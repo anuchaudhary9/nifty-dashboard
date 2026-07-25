@@ -7,6 +7,7 @@ Run this once a day (e.g. via GitHub Actions cron, after market close ~4pm IST)
 or manually whenever you want a fresh snapshot.
 """
 
+import os
 import requests
 import pandas as pd
 import sqlite3
@@ -16,7 +17,8 @@ from datetime import date
 
 DB_PATH = "data/nifty.db"
 
-# NSE blocks plain requests without realistic browser headers + a warmed-up session
+os.makedirs("data", exist_ok=True)
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36",
@@ -29,7 +31,6 @@ HEADERS = {
 def get_nse_session():
     s = requests.Session()
     s.headers.update(HEADERS)
-    # Hit the homepage first to pick up cookies NSE requires for API calls
     s.get("https://www.nseindia.com", timeout=10)
     time.sleep(1)
     s.get("https://www.nseindia.com/option-chain", timeout=10)
@@ -71,13 +72,8 @@ def fetch_option_chain(symbol="NIFTY"):
 
 
 def fetch_participant_oi():
-    """
-    NSE 'Participant wise Open Interest' report - free daily CSV.
-    Published for the previous trading day, usually available by next morning.
-    """
     s = get_nse_session()
     url = "https://nsearchives.nseindia.com/content/nsccl/fao_participant_oi_{}.csv"
-    # NSE archives by date; try the last 5 business days back until one exists
     for days_back in range(0, 6):
         d = pd.Timestamp.today().normalize() - pd.Timedelta(days=days_back)
         if d.weekday() >= 5:
@@ -102,6 +98,10 @@ def save(df, table):
 
 
 if __name__ == "__main__":
+    if not os.path.exists(DB_PATH):
+        conn = sqlite3.connect(DB_PATH)
+        conn.close()
+
     try:
         oc = fetch_option_chain("NIFTY")
         save(oc, "option_chain")
